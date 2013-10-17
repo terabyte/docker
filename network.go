@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+        "strconv"
 )
 
 var NetworkBridgeIface string
@@ -93,6 +94,37 @@ func iptables(args ...string) error {
 	return nil
 }
 
+
+// Wrapper around the ifquery command
+func ifquery(arg string) map[string]string {
+        ifres := make(map[string]string)
+        path, err := exec.LookPath("ifquery")
+        if err != nil {
+                utils.Debugf("Could not find ifquery: %s\n", err)         
+                return nil
+        }
+
+        cmd := exec.Command(path, arg)
+
+        out,err := cmd.Output()
+
+        if err != nil {
+                utils.Debugf("Couldn't run ifquery %s: %s\n", arg, err)
+                return nil
+        }
+
+        scanner := bufio.NewScanner(bytes.NewReader(out))
+        for scanner.Scan() {
+           kv := strings.SplitN(scanner.Text(),": ",2)
+           if kv != nil && len(kv)>1 {
+                   ifres[kv[0]]=kv[1]
+           }
+        }
+        
+        return ifres
+}
+
+
 func checkRouteOverlaps(routes string, dockerNetwork *net.IPNet) error {
 	utils.Debugf("Routes:\n\n%s", routes)
 	for _, line := range strings.Split(routes, "\n") {
@@ -146,22 +178,40 @@ func CreateBridgeIface(ifaceName string) error {
 	}
 
 	var ifaceAddr string
-	for _, addr := range addrs {
-		_, dockerNetwork, err := net.ParseCIDR(addr)
-		if err != nil {
-			return err
+
+
+        ifq=ifquery(ifaceName)
+        if ifq != nil {
+                // address and netmask should let us produce a CIDR result for this. If it's manually configured,
+                // we should trust it instead of trying to make our own range.
+                // added bonus: if someone manually hacks docker0 into /etc/network/interfaces, it should be magic configuration.
+                // FIXME: This code gives the mighty finger to IPv6 cases.
+                addr:=ifq["address"]
+                mask:=ifq["netmask"]
+                bits,size:=net.IPMask(net.ParseIP(mask).To4()).Size()
+                
+                if bits >0 {
+                        ifaceAddr=strings.Join([]string{addr,strconv.Itoa(bits)},"/")
+                }
+        } else {
+	
+		for _, addr := range addrs {
+			_, dockerNetwork, err := net.ParseCIDR(addr)
+			if err != nil {
+				return err
+			}
+			routes, err := ip("route")
+			if err != nil {
+				return err
+			}
+			if err := checkRouteOverlaps(routes, dockerNetwork); err == nil {
+				ifaceAddr = addr
+				break
+			} else {
+				utils.Debugf("%s: %s", addr, err)
+			}
 		}
-		routes, err := ip("route")
-		if err != nil {
-			return err
-		}
-		if err := checkRouteOverlaps(routes, dockerNetwork); err == nil {
-			ifaceAddr = addr
-			break
-		} else {
-			utils.Debugf("%s: %s", addr, err)
-		}
-	}
+        }
 	if ifaceAddr == "" {
 		return fmt.Errorf("Could not find a free IP address range for interface '%s'. Please configure its address manually and run 'docker -b %s'", ifaceName, ifaceName)
 	}
