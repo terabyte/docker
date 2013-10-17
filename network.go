@@ -8,10 +8,11 @@ import (
 	"log"
 	"net"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
         "strconv"
+	"bufio"
+	"bytes"
 )
 
 var NetworkBridgeIface string
@@ -180,7 +181,7 @@ func CreateBridgeIface(ifaceName string) error {
 	var ifaceAddr string
 
 
-        ifq=ifquery(ifaceName)
+        ifq:=ifquery(ifaceName)
         if ifq != nil {
                 // address and netmask should let us produce a CIDR result for this. If it's manually configured,
                 // we should trust it instead of trying to make our own range.
@@ -188,7 +189,7 @@ func CreateBridgeIface(ifaceName string) error {
                 // FIXME: This code gives the mighty finger to IPv6 cases.
                 addr:=ifq["address"]
                 mask:=ifq["netmask"]
-                bits,size:=net.IPMask(net.ParseIP(mask).To4()).Size()
+                bits,_:=net.IPMask(net.ParseIP(mask).To4()).Size()
                 
                 if bits >0 {
                         ifaceAddr=strings.Join([]string{addr,strconv.Itoa(bits)},"/")
