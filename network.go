@@ -98,6 +98,7 @@ func iptables(args ...string) error {
 
 // Wrapper around the ifquery command
 func ifquery(arg string) map[string]string {
+	utils.Debugf("Ifquery: Checking for static ifconfig:\n\n%s", arg)
         ifres := make(map[string]string)
         path, err := exec.LookPath("ifquery")
         if err != nil {
@@ -121,6 +122,7 @@ func ifquery(arg string) map[string]string {
                    ifres[kv[0]]=kv[1]
            }
         }
+	utils.Debugf("Got result: %s",ifres)
         
         return ifres
 }
@@ -188,12 +190,16 @@ func CreateBridgeIface(ifaceName string) error {
                 // added bonus: if someone manually hacks docker0 into /etc/network/interfaces, it should be magic configuration.
                 // FIXME: This code gives the mighty finger to IPv6 cases.
                 mask:=ifq["netmask"]
+
+		utils.Debugf("CreateBridgeIface: Setting interface range based on static config for %s: %s/%s", ifaceName,addr,mask)
+
                 bits,_:=net.IPMask(net.ParseIP(mask).To4()).Size()
                 
                 if bits >0 {
                         ifaceAddr=strings.Join([]string{addr,strconv.Itoa(bits)},"/")
                 }
         } else {
+		utils.Debugf("CreateBridgeIface: Discovering viable interface range for %s", ifaceName)	
 	
 		for _, addr := range addrs {
 			_, dockerNetwork, err := net.ParseCIDR(addr)
