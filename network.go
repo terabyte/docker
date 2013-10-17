@@ -182,12 +182,11 @@ func CreateBridgeIface(ifaceName string) error {
 
 
         ifq:=ifquery(ifaceName)
-        if ifq != nil {
+        if addr, ok :=ifq["address"]; ok  { // Let's only use this if there's an IP assigned.
                 // address and netmask should let us produce a CIDR result for this. If it's manually configured,
                 // we should trust it instead of trying to make our own range.
                 // added bonus: if someone manually hacks docker0 into /etc/network/interfaces, it should be magic configuration.
                 // FIXME: This code gives the mighty finger to IPv6 cases.
-                addr:=ifq["address"]
                 mask:=ifq["netmask"]
                 bits,_:=net.IPMask(net.ParseIP(mask).To4()).Size()
                 
